@@ -22,7 +22,7 @@ def seed():
             for i,(n,k) in enumerate(zip(ns,ks)):
                 lc=f'{code}-L{i+1:02}';lot=db.query(SeedLot).filter_by(study_id=study.id,code=lc).first()
                 if not lot:lot=SeedLot(study_id=study.id,code=lc,name=f'独立种子批次 {i+1:02}',origin='铎岑种质试验室 / 合成批次');db.add(lot);db.flush()
-                if not db.query(LotCount).filter_by(lot_id=lot.id).first():db.add(LotCount(lot_id=lot.id,n=int(n),k=int(k),note='合成汇总；n为试种粒数，k为萌发粒数，未萌发n−k；每批一条计数。'))
+                if not db.query(LotCount).filter_by(lot_id=lot.id).first():db.add(LotCount(lot_id=lot.id,n=int(n),k=int(k),note='合成汇总；n为试种粒数，k为萌发粒数，未萌发n−k；每批一条计数。',source_batch='duocen-germination-lots-202611.csv',source_version=1,content_hash=''))
             db.flush();studies.append(study)
         if not db.query(BayesRun).filter_by(name='异质批次 · 条件EB基线').first():
             study=studies[0];snapshot=create_snapshot(db,study);result=analyze_germination(snapshot,.7,50);run=BayesRun(name='异质批次 · 条件EB基线',study_id=study.id,threshold=.7,future_n=50,input_snapshot=snapshot,status='completed',result=result,owner='许禾 · 批次分析员');db.add(run);db.flush();db.add(SamplingNote(run_id=run.id,title='首批独立补种研究说明',interpretation='后验与同批未来计数条件于点估αβ，不含超参数估计误差；贴边必须标弱识别。',proposal='保留每批n/k口径，下一轮同批独立试种，不把阈值概率当成合格或自动发货指令。',status='approved',owner='许禾 · 批次分析员',reviewer='陆岑 · 种质负责人',review_note='批准研究归档；结果只供独立补种研究，条件EB不作种子合格保证。'))

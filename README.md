@@ -34,13 +34,28 @@ JWT角色后端真实执行，viewer写入403、analyst审批403、未批准导�
 7. 09:25 切换 `DC-02` 同观测率夹具：所有批70/100，α真实触及5000上界，界面标弱识别；不把窄条件区间当成稳定已知先验。
 8. 10:00 陆岑批准独立补种研究，温桥下载 `germination-N-summary.csv` 和 `germination-N-predictive.csv`，按相同n/k口径另做独立试种。
 
-## 六页、五实体与seed
+## 六页、实体与seed
 
-批次总览、计数来源、先验与情景、条件后验、补种审阅、研究留痕。`GerminationStudy / SeedLot / LotCount / BayesRun / SamplingNote` 均贯穿表/model/schema/service/route/前端API/store/页面或业务组件，另有User/Audit。批次身份与n/k只读核对，计数批注可写，运行冻结快照后不回写。
+批次总览、计数来源、先验与情景、条件后验、补种审阅、研究留痕。`GerminationStudy / SeedLot / LotCount / CountBatch / BayesRun / SamplingNote` 均贯穿表/model/schema/service/route/前端API/store/页面或业务组件，另有User/Audit。批次身份只读核对；计数数值只能经计数来源页的来源批号整批导入更新，计数批注可写；运行冻结快照后不回写。
 
 三研究×28=84批次、84计数：DC-01潜在率Beta(8,4)再Binomial抽样（固定种子320）；DC-02全部70/100为人工构造的同观测率上界夹具，不冒充随机抽样；DC-03固定种子322生成n、k全部0，全一另外有独立算法拒绝验证。每批n20–180。自然键email、study code、(study,lot code)、lot_id唯一计数、基线run name；重复seed只补缺失，不覆盖用户批注、计数或已批准建议。`SEED_DEMO=true`启动执行，失败记日志；可独立重复执行seed。
 
 共享RunSummary在首页/结果/审阅复用，ShrinkageChart在首页/结果复用；另有StudySelector、PosteriorChart、PredictiveChart及通用Notice/DataTable/StatusBadge。useResearch/useAction处理公共状态。全部数值、CDF与PMF在Python计算，SVG只映射真实结果。
+
+## 来源批号整批导入与版本规则
+
+计数修正不再直接改库：计数来源页按`来源批号 + 递增版本`整批粘贴`批次编号,n,k`，先预检再发布（`POST /studies/{sid}/count-batches`，`commit=false/true`）。预检逐行校验：批次归属当前研究（拒绝跨研究行）、整数口径1≤n≤100000且0≤k≤n（拒绝布尔/小数/越界）、来源批号内编号不重复、且必须覆盖研究内全部批次；任一坏行使**整批拒绝**，响应逐行返回行号与原因，不写入任何计数。
+
+每个批次对规范化内容（按批次编号排序）计算sha256内容指纹，写入不可变台账`count_batches`并在`lot_counts`上记录来源批号、版本、指纹与更新时间。语义规则：
+
+- **同版同内容重放**：指纹一致，返回既有批次`replay`，不重复写计数、不新增台账；
+- **同版异内容冲突**：HTTP 409 `same_version_conflict`，保留先发布内容；
+- **旧版迟到**：同来源批号已存在更高版本时HTTP 409 `stale_version`，已发布计数不回退；
+- **并发发布**：事务内对研究批次行加`FOR UPDATE`行锁串行化，唯一约束`(study_id,source_batch,version)`兜底；同内容并发提交收敛为重放，异内容仅一方保留，最终只留下较新版本。
+
+预检响应同时返回逐批差异（旧/新k/n及原来源版本）与拒绝原因，页面分区展示；发布写`count.batch.publish`、重放写`count.batch.replay`、预检拒绝写`count.batch.reject_precheck`审计。已发布计数是后续新研究`create_snapshot`的唯一读取来源；历史`BayesRun.input_snapshot`与获批CSV导出沿用冻结原快照，导入不回写。既有部署需应用`migrations/002_count_batches.sql`（新库由metadata直接建表建列）。
+
+
 
 ## 有界多起点边际拟合
 
@@ -92,6 +107,8 @@ python -m src.worker
 cd ../frontend
 npm ci
 npm run dev
+# 后端测试：内存SQLite隔离库，覆盖预检拒绝、重放、冲突、旧版不回退、并发交错与快照隔离
+cd ../backend && python -m pytest
 ```
 
 backend/src/{routes,controllers,services,models,schemas,middlewares,utils,constants,config}按来源、边际拟合、后验、运行、审阅拆分；backend/scripts/seed_demo.py；migration为可选索引，metadata首次建表，非独立全量DDL。frontend/src/{api,stores,types,components/common,hooks,pages,router,utils,constants}为React应用。
